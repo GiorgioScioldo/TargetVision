@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+<meta name="theme-color" content="#000000">
+<title>TargetVision</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+
+  @media (orientation: portrait) {
+    #rotate-msg { display: flex !important; }
+    #app { display: none !important; }
+  }
+
+  #rotate-msg {
+    display: none; position: fixed; inset: 0; z-index: 10000; background: #000; color: #ff3333;
+    flex-direction: column; align-items: center; justify-content: center;
+    font-size: 18px; letter-spacing: 2px; text-align: center; gap: 20px;
+  }
+  #rotate-msg svg { animation: spin 2s linear infinite; }
+  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+  #app { position: fixed; inset: 0; background: #000; }
+
+  #live-canvas { position: absolute; display: block; }
+
+  #hud {
+    position: absolute; inset: 0; z-index: 10;
+    pointer-events: none; display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .slider-track {
+    pointer-events: all; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    user-select: none; -webkit-user-select: none;
+  }
+  .slider-icon { color: rgba(255,255,255,0.9); text-shadow: 0 0 6px rgba(0,0,0,0.8); filter: drop-shadow(0 0 3px rgba(255,200,0,0.7)); }
+  .slider-icon svg { width: 20px; height: 20px; }
+  .slider-label { color: rgba(255,220,100,0.95); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; text-shadow: 0 0 6px #000; }
+  .slider-value { color: #ff4444; font-size: 13px; font-weight: bold; letter-spacing: 1px; text-shadow: 0 0 8px rgba(255,60,60,0.8),0 0 2px #000; min-width: 40px; text-align: center; }
+
+  .v-slider {
+    -webkit-appearance: none; appearance: none;
+    writing-mode: vertical-lr; direction: rtl;
+    width: 36px; height: 160px; background: transparent; cursor: pointer; outline: none;
+  }
+  .v-slider::-webkit-slider-runnable-track {
+    width: 4px; background: linear-gradient(to bottom, rgba(255,180,0,0.15), rgba(255,180,0,0.5));
+    border-radius: 2px; border: 1px solid rgba(255,180,0,0.3);
+  }
+  .v-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, #ffe066, #cc8800);
+    border: 2px solid rgba(255,220,80,0.9); box-shadow: 0 0 10px rgba(255,160,0,0.6), 0 2px 6px rgba(0,0,0,0.7);
+    margin-left: -9px; cursor: grab;
+  }
+  .v-slider:active::-webkit-slider-thumb { cursor: grabbing; }
+
+  #panel-left {
+    display: flex; flex-direction: row; align-items: stretch;
+    padding: 0; background: linear-gradient(to right, rgba(0,0,0,0.6), transparent);
+    width: 84px; height: 100%;
+  }
+  /* Ogni slider-track nel panel-left occupa metà larghezza e tutta l'altezza */
+  #panel-left .slider-track {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: space-between;
+    padding: 14px 4px; gap: 0;
+  }
+  /* Gli slider nel panel-left crescono per riempire lo spazio disponibile */
+  #panel-left .v-slider {
+    flex: 1; height: 0; min-height: 60px;
+  }
+  #panel-right {
+    display: flex; flex-direction: row; align-items: center; gap: 8px;
+    padding: 12px 6px; background: linear-gradient(to left, rgba(0,0,0,0.6), transparent);
+    min-width: 110px; height: 100%; justify-content: center;
+  }
+
+  #status-bar {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 20; color: rgba(255,255,255,0.6); font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase; text-shadow: 0 0 4px #000; pointer-events: none;
+    display: flex; gap: 18px; align-items: center; white-space: nowrap;
+  }
+  #status-fps { color: rgba(100,255,100,0.7); }
+  #status-hits { color: rgba(255,80,80,0.9); }
+  #status-cam { color: rgba(100,200,255,0.7); }
+
+  #capture-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #ff3333; flex-shrink: 0;
+    animation: pulse-dot 1s ease-in-out infinite; box-shadow: 0 0 6px #ff0000;
+  }
+  @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.6)} }
+
+  #countdown {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 20; color: rgba(255,220,80,0.75); font-size: 11px; letter-spacing: 3px;
+    text-shadow: 0 0 6px #000; pointer-events: none; white-space: nowrap;
+  }
+
+  /* Pulsante fullscreen */
+  #fs-btn {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    z-index: 30;
+    width: 36px; height: 36px;
+    padding: 7px;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,220,80,0.35);
+    border-radius: 8px;
+    color: rgba(255,220,80,0.85);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #fs-btn:active { background: rgba(255,180,0,0.25); border-color: rgba(255,220,80,0.7); }
+  #fs-btn svg { width: 100%; height: 100%; }
+
+  /* Pulsante snapshot: posizionato a sinistra del fullscreen */
+  #snap-btn {
+    position: absolute;
+    bottom: 12px; right: 60px;   /* 12 + 36 (fs-btn) + 12 di gap = 60 */
+    z-index: 30;
+    width: 36px; height: 36px;
+    padding: 7px;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,220,80,0.35);
+    border-radius: 8px;
+    color: rgba(255,220,80,0.85);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #snap-btn:active { background: rgba(255,180,0,0.25); border-color: rgba(255,220,80,0.7); }
+  #snap-btn.flash {
+    background: rgba(255,255,255,0.9);
+    border-color: rgba(255,255,255,1);
+    color: rgba(0,0,0,0.8);
+  }
+  #snap-btn svg { width: 100%; height: 100%; }
+
+  #error-overlay {
+    display: none; position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.92);
+    color: #ff4444; font-size: 15px; letter-spacing: 1px;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 30px;
+  }
+  #error-overlay.visible { display: flex; }
+
+</style>
+</head>
+<body>
+
+<div id="rotate-msg">
+  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+    <rect x="6" y="14" width="36" height="24" rx="3" stroke="#ff3333" stroke-width="2.5"/>
+    <path d="M32 6 L42 14 L32 22" stroke="#ff3333" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <span>RUOTA IL DISPOSITIVO</span>
+  <span style="font-size:11px;color:rgba(255,100,100,0.7)">Modalità orizzontale richiesta</span>
+</div>
+
+<div id="app">
+  <canvas id="live-canvas"></canvas>
+
+  <div id="hud">
+    <div id="panel-left">
+      <div class="slider-track">
+        <div class="slider-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+        </div>
+        <div class="slider-label">ZOOM</div>
+        <input type="range" class="v-slider" id="zoom-slider" min="0" max="100" value="10" step="1">
+        <div class="slider-value" id="zoom-display">1×</div>
+      </div>
+      <div class="slider-track">
+        <div class="slider-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="8"/>
+            <line x1="12" y1="2" x2="12" y2="5"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="5" y2="12"/>
+            <line x1="19" y1="12" x2="22" y2="12"/>
+          </svg>
+        </div>
+        <div class="slider-label">CERCHIO</div>
+        <input type="range" class="v-slider" id="circle-slider" min="0" max="10" value="3" step="1">
+        <div class="slider-value" id="circle-display">3</div>
+      </div>
+    </div>
+
+    <div id="panel-right">
+      <div class="slider-track">
+        <div class="slider-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>
+          </svg>
+        </div>
+        <div class="slider-label">DURATA</div>
+        <input type="range" class="v-slider" id="duration-slider" min="1" max="5" value="2" step="1">
+        <div class="slider-value" id="duration-display">3s</div>
+      </div>
+      <div class="slider-track">
+        <div class="slider-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="slider-label">TOLLERANZA</div>
+        <input type="range" class="v-slider" id="tolerance-slider" min="1" max="10" value="5" step="1">
+        <div class="slider-value" id="tolerance-display">5</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="countdown">AVVIO…</div>
+  <div id="status-bar">
+    <div id="capture-dot"></div>
+    <span id="status-cam">AVVIO…</span>
+    <span id="status-fps"></span>
+    <span id="status-hits"></span>
+  </div>
+
+  <!-- Pulsante snapshot (a sinistra del fullscreen) -->
+  <button id="snap-btn" title="Scatta foto">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+  </button>
+
+  <!-- Pulsante fullscreen in basso a destra -->
+  <button id="fs-btn" title="Fullscreen">
+    <svg id="fs-icon-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+    <svg id="fs-icon-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+      <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+      <line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>
+    </svg>
+  </button>
+</div>
+
+<div id="error-overlay">
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ff4444" stroke-width="2">
+    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+  </svg>
+  <span id="error-text">Errore fotocamera</span>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────────────────────────
+// COSTANTI
+// ──────────────────────────────────────────────────────────────────────────────
+const STACK_SIZE = 10;  // 5 secondi x 2 frame/s
+const CAPTURE_INTERVAL_MS = 500;  // cattura ogni 0.5s (2 fps)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STATO
+// ──────────────────────────────────────────────────────────────────────────────
+let zoomCapability = null;
+
+// Cache della fascia rilevata: ricalcolata solo ogni N frame per non rallentare
+let cachedBand = null;
+let bandFrameCounter = 0;
+const BAND_REFRESH_EVERY = 4;  // ricalcola ogni 4 frame (2 secondi a 2fps)
+
+// Buffer temporale dei centroidi rilevati per stabilizzare la visualizzazione:
+// un foro viene mostrato solo se appare in almeno 2 frame consecutivi entro
+// una piccola tolleranza di posizione. Elimina il flickering dovuto a piccole
+// imprecisioni della registrazione.
+let previousCentroids = [];   // centroidi del frame precedente, formato [{x, y}]
+const STABILITY_RADIUS = 15;  // distanza max (px) per considerare lo stesso foro
+
+// Stack LIFO: [0]=più recente, ogni slot è un ImageData del crop
+const imageStack = [];
+
+// Canvas di lavoro a risoluzione nativa (non aggiunto al DOM)
+let workCanvas = null;
+let workCtx    = null;
+
+// Dimensioni viewport e parametri del crop
+let renderW = 0, renderH = 0;
+let srcX = 0, srcY = 0, srcW = 0, srcH = 0;
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DOM
+// ──────────────────────────────────────────────────────────────────────────────
+const liveCanvas      = document.getElementById('live-canvas');
+const ctx             = liveCanvas.getContext('2d', { willReadFrequently: true });
+const zoomSlider      = document.getElementById('zoom-slider');
+const circleSlider    = document.getElementById('circle-slider');
+const circleDisplay   = document.getElementById('circle-display');
+const durationSlider  = document.getElementById('duration-slider');
+const toleranceSlider = document.getElementById('tolerance-slider');
+const zoomDisplay     = document.getElementById('zoom-display');
+const durationDisplay  = document.getElementById('duration-display');
+const toleranceDisplay = document.getElementById('tolerance-display');
+const statusCam   = document.getElementById('status-cam');
+const statusFps   = document.getElementById('status-fps');
+const statusHits  = document.getElementById('status-hits');
+const countdownEl = document.getElementById('countdown');
+const errorOverlay = document.getElementById('error-overlay');
+const errorText    = document.getElementById('error-text');
+
+// ──────────────────────────────────────────────────────────────────────────────
+// LAYOUT: canvas centrato con aspect ratio corretta
+// ──────────────────────────────────────────────────────────────────────────────
+function updateLayout() {
+  renderW = window.innerWidth;
+  renderH = window.innerHeight;
+
+  liveCanvas.width  = renderW;
+  liveCanvas.height = renderH;
+  liveCanvas.style.left = '0px';
+  liveCanvas.style.top  = '0px';
+
+  if (videoEl && videoEl.videoWidth && videoEl.videoHeight) {
+    computeCrop(videoEl.videoWidth, videoEl.videoHeight);
+  }
+}
+
+// Calcola il crop centrato che mantiene le proporzioni:
+// se il video è più largo del display, taglia i lati;
+// se è più alto, taglia sopra e sotto.
+function computeCrop(vidW, vidH) {
+  const dispAR  = renderW / renderH;
+  const videoAR = vidW / vidH;
+
+  if (videoAR > dispAR) {
+    srcH = vidH;
+    srcW = Math.round(vidH * dispAR);
+    srcX = Math.round((vidW - srcW) / 2);
+    srcY = 0;
+  } else {
+    srcW = vidW;
+    srcH = Math.round(vidW / dispAR);
+    srcX = 0;
+    srcY = Math.round((vidH - srcH) / 2);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SLIDER
+// ──────────────────────────────────────────────────────────────────────────────
+// SLIDER ZOOM
+//
+// Il cursore (0-100) mappa logaritmicamente sul range fisso 1x-6x della
+// camera posteriore principale (no switch sensori).
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SLIDER ZOOM — solo zoom hardware, range reale dal sensore
+//
+// Il cursore (0-100) mappa logaritmicamente su [hwMin, hwMax] dove
+// hwMin e hwMax sono i valori reali restituiti dalla camera aperta.
+// Nessuno zoom digitale: qualità ottica massima in tutto il range.
+// ──────────────────────────────────────────────────────────────────────────────
+
+function getHwZoomRange() {
+  // Range fisso 1x-6x (camera posteriore principale, no switch sensori)
+  return { min: 1, max: 6 };
+}
+
+function mapZoomSlider(v) {
+  const { min, max } = getHwZoomRange();
+  if (max <= min) return min;
+  const t = v / 100;
+  return min * Math.pow(max / min, t);
+}
+
+function updateZoomSliderDisplay() {
+  const v = parseInt(zoomSlider.value);
+  const z = mapZoomSlider(v);
+  zoomDisplay.textContent = z < 2 ? z.toFixed(1) + 'x' : Math.round(z) + 'x';
+  zoomSlider.title = 'Zoom x1.0 - x6.0';
+  // statusCam viene gestito da initCamera, non sovrascrivere
+}
+
+
+let zoomDebounceTimer = null;
+
+zoomSlider.addEventListener('input', () => {
+  const z = mapZoomSlider(parseInt(zoomSlider.value));
+  zoomDisplay.textContent = z < 2 ? z.toFixed(1) + 'x' : Math.round(z) + 'x';
+  clearTimeout(zoomDebounceTimer);
+  zoomDebounceTimer = setTimeout(() => applyHardwareZoom(mapZoomSlider(parseInt(zoomSlider.value))), 250);
+});
+
+durationSlider.addEventListener('input',  () => { durationDisplay.textContent  = durationSlider.value + 's'; });
+toleranceSlider.addEventListener('input', () => { toleranceDisplay.textContent = toleranceSlider.value; });
+circleSlider.addEventListener('input',    () => { circleDisplay.textContent    = circleSlider.value; });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CAMERA — getUserMedia camera posteriore fissa, zoom 1x-6x via applyConstraints
+// ──────────────────────────────────────────────────────────────────────────────
+
+let stream = null;
+let videoEl = null;
+let captureTimer = null;
+
+async function initCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 3840 },
+        height: { ideal: 2160 },
+        frameRate: { ideal: 30 }
+      },
+      audio: false
+    });
+
+    // Range zoom fisso 1x-6x
+    zoomCapability = { zoom: { min: 1, max: 6 } };
+    statusCam.textContent = 'rear x1-x6';
+    updateZoomSliderDisplay();
+
+    videoEl = document.createElement('video');
+    videoEl.srcObject = stream;
+    videoEl.playsInline = true;
+    videoEl.muted = true;
+    await videoEl.play();
+
+    // Attesa robusta delle dimensioni reali del video: in alcuni browser/condizioni
+    // l'evento 'loadedmetadata' scatta con videoWidth ancora a 0, generando un crop
+    // sbagliato al primo render (immagine apparentemente "schiacciata" nella metà
+    // sinistra dello schermo). Aspettiamo loadedmetadata + un loadeddata + alcuni
+    // requestAnimationFrame finché videoWidth > 0.
+    if (!videoEl.videoWidth) {
+      await new Promise(r => videoEl.addEventListener('loadedmetadata', r, { once: true }));
+    }
+    if (!videoEl.videoWidth) {
+      await new Promise(r => videoEl.addEventListener('loadeddata', r, { once: true }));
+    }
+    // Poll fino a 1 secondo se videoWidth è ancora 0
+    let waitTries = 0;
+    while (!videoEl.videoWidth && waitTries < 60) {
+      await new Promise(r => requestAnimationFrame(r));
+      waitTries++;
+    }
+
+    workCanvas = document.createElement('canvas');
+    workCanvas.width  = videoEl.videoWidth;
+    workCanvas.height = videoEl.videoHeight;
+    workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    computeCrop(videoEl.videoWidth, videoEl.videoHeight);
+
+    captureAndRender();
+    captureTimer = setInterval(captureAndRender, CAPTURE_INTERVAL_MS);
+
+  } catch(e) {
+    showError('Accesso fotocamera negato o non disponibile.<br>Verifica permessi Chrome e HTTPS.<br><small>' + e.message + '</small>');
+  }
+}
+
+async function applyHardwareZoom(z) {
+  if (!stream) return;
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+
+  imageStack.length = 0;
+  previousCentroids = [];   // reset stabilizzazione temporale
+  statusHits.textContent = '';
+
+  const zClamped = Math.max(1, Math.min(6, z));
+  try {
+    await track.applyConstraints({ advanced: [{ zoom: zClamped }] });
+    countdownEl.textContent = 'zoom ' + (zClamped < 2 ? zClamped.toFixed(1) : Math.round(zClamped)) + 'x';
+    setTimeout(() => { if (countdownEl.textContent.match(/^zoom /)) countdownEl.textContent = ''; }, 1500);
+  } catch(e) {
+    try {
+      await track.applyConstraints({ zoom: zClamped });
+    } catch(e2) {
+      countdownEl.textContent = 'zoom n/s';
+    }
+  }
+
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 200));
+
+  const newW = videoEl && videoEl.videoWidth;
+  const newH = videoEl && videoEl.videoHeight;
+  if (newW && newH) {
+    if (workCanvas.width !== newW || workCanvas.height !== newH) {
+      workCanvas.width  = newW;
+      workCanvas.height = newH;
+      workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    computeCrop(newW, newH);
+  }
+}
+
+// Focus al tocco (WebRTC pointOfInterest se supportato)
+const focusIndicator = document.createElement('div');
+focusIndicator.style.cssText = 'position:fixed;z-index:50;pointer-events:none;width:52px;height:52px;border:2px solid rgba(255,220,80,0.9);border-radius:50%;transform:translate(-50%,-50%);transition:opacity 0.4s;opacity:0;';
+document.getElementById('app').appendChild(focusIndicator);
+
+let focusResetTimer = null;
+liveCanvas.addEventListener('touchend', async (e) => {
+  if (!stream) return;
+  const touch = e.changedTouches[0]; if (!touch) return;
+  const x = touch.clientX, y = touch.clientY;
+  if (x < 90 || x > window.innerWidth - 120) return;
+
+  focusIndicator.style.left = x+'px'; focusIndicator.style.top = y+'px'; focusIndicator.style.opacity = '1';
+  setTimeout(() => { focusIndicator.style.opacity = '0'; }, 1200);
+
+  const track = stream.getVideoTracks()[0];
+  const vidW = videoEl.videoWidth, vidH = videoEl.videoHeight;
+  const normX = x / window.innerWidth;
+  const normY = y / window.innerHeight;
+  const sensorX = (srcX + normX * srcW) / vidW;
+  const sensorY = (srcY + normY * srcH) / vidH;
+  try {
+    await track.applyConstraints({
+      advanced: [{ pointOfInterest: { x: sensorX, y: sensorY }, focusMode: 'single-shot' }]
+    });
+    clearTimeout(focusResetTimer);
+    focusResetTimer = setTimeout(async () => {
+      try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch(e){}
+    }, 2000);
+  } catch(e) {
+    try { await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] }); } catch(e2){}
+  }
+}, { passive: true });
+
+// ──────────────────────────────────────────────────────────────────────────────
+function captureAndRender() {
+  if (!videoEl || !workCtx || srcW === 0) return;
+
+  // Auto-correzione: se le dimensioni reali del video sono cambiate (es. all'avvio
+  // erano lette troppo presto), aggiorna workCanvas e ricalcola il crop.
+  const vW = videoEl.videoWidth, vH = videoEl.videoHeight;
+  if (vW && vH && (workCanvas.width !== vW || workCanvas.height !== vH)) {
+    workCanvas.width  = vW;
+    workCanvas.height = vH;
+    workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+    computeCrop(vW, vH);
+    imageStack.length = 0;
+    previousCentroids = [];
+  }
+
+  // 1. Cattura il frame corrente (risoluzione nativa)
+  workCtx.drawImage(videoEl, 0, 0, workCanvas.width, workCanvas.height);
+
+  // 2. Estrai il crop come ImageData
+  const imgData = workCtx.getImageData(srcX, srcY, srcW, srcH);
+
+  // 3. Inserisci in cima allo stack LIFO (grezzo, non modificato)
+  imageStack.unshift(imgData);
+  if (imageStack.length > STACK_SIZE) imageStack.pop();
+
+  // 4. Parametri dai cursori
+  const duration  = parseInt(durationSlider.value);
+  const tolerance = parseInt(toleranceSlider.value);
+  const params    = toleranceParams(tolerance);
+
+  // Converti durata (secondi) in indice dello stack (2 frame/s)
+  const stackIdx = duration * 2;
+
+  if (imageStack.length > stackIdx) {
+    const frameNow = imageStack[0];
+    const frameOld = imageStack[stackIdx];
+
+    // Mostra SEMPRE frameNow grezzo a schermo PRIMA dell'analisi:
+    // se l'analisi va in errore o è lenta, il video non si blocca.
+    ctx.drawImage(workCanvas, srcX, srcY, srcW, srcH, 0, 0, renderW, renderH);
+
+    try {
+      const { frame: frameAligned, dx: regDx, dy: regDy } =
+        maybeRegister(frameNow, frameOld, srcW, srcH);
+
+      // Rileva la fascia ogni BAND_REFRESH_EVERY frame (la fascia non cambia velocemente)
+      if (bandFrameCounter <= 0) {
+        cachedBand = detectWhiteBand(frameNow, srcW, srcH);
+        bandFrameCounter = BAND_REFRESH_EVERY;
+      } else {
+        bandFrameCounter--;
+      }
+      const band = cachedBand;
+
+      // Maschera limitata alla fascia bianca + margine bordi proporzionale allo shift
+      const rawMask = computeDarkMask(frameAligned, frameOld, params, band, regDx, regDy);
+      const { mask: filteredMask, centroids } = filterMask(rawMask, srcW, srcH, params);
+
+      // Stabilizzazione temporale: mostra solo i centroidi confermati anche
+      // nel frame precedente entro STABILITY_RADIUS pixel. Elimina il flickering
+      // di falsi positivi che appaiono per un singolo frame.
+      const stableCentroids = centroids.filter(c => {
+        return previousCentroids.some(p =>
+          Math.abs(p.cx - c.cx) <= STABILITY_RADIUS &&
+          Math.abs(p.cy - c.cy) <= STABILITY_RADIUS);
+      });
+      // Aggiorna previousCentroids con i centroidi del frame corrente
+      // (non filtrati: così al prossimo frame possiamo confermare).
+      previousCentroids = centroids.map(c => ({ cx: c.cx, cy: c.cy }));
+
+      // Costruisce una maschera ridotta ai soli pixel vicini ai centroidi stabili,
+      // per evitare di mostrare aree verdi non confermate.
+      let displayMask = filteredMask;
+      if (stableCentroids.length < centroids.length) {
+        displayMask = new Uint8Array(srcW * srcH);
+        for (const c of stableCentroids) {
+          // Per ogni centroide stabile, copia i pixel della maschera filtrata
+          // entro un raggio = STABILITY_RADIUS dal centroide
+          const r = STABILITY_RADIUS;
+          const y0 = Math.max(0, c.cy - r), y1 = Math.min(srcH - 1, c.cy + r);
+          const x0 = Math.max(0, c.cx - r), x1 = Math.min(srcW - 1, c.cx + r);
+          for (let yy = y0; yy <= y1; yy++) {
+            for (let xx = x0; xx <= x1; xx++) {
+              const idx = yy * srcW + xx;
+              if (filteredMask[idx]) displayMask[idx] = 1;
+            }
+          }
+        }
+      }
+
+      overlayMask(displayMask, stableCentroids, srcW, srcH, regDx, regDy);
+
+      // Linee tratteggiate rosse sui bordi della fascia rilevata (puramente decorative)
+      if (band) drawBandLines(band, srcW);
+
+      const hitPx = displayMask.reduce((s, v) => s + v, 0);
+      statusHits.textContent  = 'DIFF ' + hitPx.toLocaleString() + 'px  (' + stableCentroids.length + '/' + centroids.length + ')';
+      countdownEl.textContent = '';
+    } catch(e) {
+      // Mai bloccare il video preview per un errore di analisi
+      countdownEl.textContent = 'err: ' + e.message;
+    }
+
+  } else {
+    // Stack non ancora abbastanza pieno: mostra il frame grezzo senza maschera
+    ctx.drawImage(
+      workCanvas,
+      srcX, srcY, srcW, srcH,
+      0, 0, renderW, renderH
+    );
+    statusHits.textContent  = '';
+    countdownEl.textContent = `RACCOLTA FRAME: ${imageStack.length} / ${stackIdx + 1}`;
+  }
+
+  statusFps.textContent = 'STACK ' + imageStack.length + '/' + STACK_SIZE;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// REGISTRAZIONE — basata sul centroide del CERCHIO CENTRALE PIENO
+//
+// Il cerchio centrale pieno del bersaglio è l'unica caratteristica geometrica
+// che è SEMPRE INTERAMENTE INQUADRATA e completamente convessa. La cornice
+// esterna può uscire dall'inquadratura, le linee sono troppo sottili, i numeri
+// sono troppo piccoli e variabili. Il cerchio centrale invece è grande,
+// compatto, sempre visibile.
+//
+// L'algoritmo:
+//   1. Marca i pixel "del cerchio": rosso saturo OPPURE neri scuri (i fori
+//      dei colpi all'interno del cerchio vengono considerati come parte del
+//      cerchio, così la loro presenza non sposta il centroide)
+//   2. Trova le componenti connesse di tale maschera
+//   3. Seleziona quella più grande che ha forma di disco (compattezza ≥ 0.80,
+//      aspect ratio bbox ≈ 1:1)
+//   4. Lo shift di registrazione è la differenza tra i centroidi di now e old
+//
+// Il cerchio centrale ha compattezza ~0.99, la cornice esterna è un anello con
+// compattezza ~0.30, gli altri elementi rossi (linee, numeri) hanno compattezza
+// < 0.7 o area sotto la soglia minima.
+//
+// Funziona da zoom 1× a 6× perché il criterio non dipende da dimensioni assolute.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Trova il centroide del CERCHIO CENTRALE PIENO del bersaglio.
+//
+// Approccio basato su componenti connesse e compattezza:
+//   1. Marca tutti i pixel "del bersaglio interno": rosso saturo OPPURE nero scuro
+//      (i fori dei colpi sono neri ma fanno comunque parte del cerchio centrale)
+//   2. Trova tutte le componenti connesse di dimensione significativa
+//   3. Per ognuna calcola la compattezza: area / (π * (bbox_max/2)²)
+//   4. Un cerchio pieno ha compattezza ≈ 1.0
+//      Un anello (cornice esterna) ha compattezza ≈ 0.3
+//      Linee, numeri, oggetti irregolari hanno compattezza < 0.7
+//   5. Restituisce il centroide della componente più grande con compattezza ≥ 0.80
+//      e aspect ratio ~quadrato (bbox quasi circolare)
+//
+// Vantaggi:
+//   - Funziona indipendentemente dal diametro del cerchio (zoom 1× → 6×)
+//   - Robusto ai fori interni (vengono inclusi come "neri" e non riducono compattezza)
+//   - Robusto a cornice esterna parzialmente fuori inquadratura
+//   - Non confonde con linee/numeri/altri elementi rossi
+
+// Threshold sui pixel "rosso saturo + nero scuro"
+function isDiskPixel(r, g, b) {
+  if (r > 130 && r - g > 70 && r - b > 70) return true;  // rosso saturo
+  const lum = 0.299*r + 0.587*g + 0.114*b;
+  if (lum < 50) return true;  // nero (foro o numero scuro)
+  return false;
+}
+
+// Parametri della rilevazione
+const MIN_DISK_SIZE     = 800;   // pixel minimi per essere un cerchio centrale candidato
+const MIN_COMPACTNESS   = 0.80;  // compattezza minima (1.0 = cerchio perfetto)
+const ASPECT_MIN        = 0.70;  // bbox aspect ratio min (h/w o w/h)
+const ASPECT_MAX        = 1.43;  // = 1/0.70
+
+function findRedCentroid(frame) {
+  const W = frame.width, H = frame.height;
+  const d = frame.data;
+  const N = W * H;
+
+  // 1. Mappa binaria "pixel del bersaglio interno"
+  const disk = new Uint8Array(N);
+  for (let p = 0, i = 0; p < N; p++, i += 4) {
+    if (isDiskPixel(d[i], d[i+1], d[i+2])) disk[p] = 1;
+  }
+
+  // 2. Trova la componente connessa più grande con compattezza alta.
+  // Stack dinamico, controllo "disk && !visited" PRIMA di push per limitarne crescita.
+  const visited = new Uint8Array(N);
+  const stack = [];
+
+  let best = null;
+
+  for (let seed = 0; seed < N; seed++) {
+    if (!disk[seed] || visited[seed]) continue;
+
+    // BFS dalla seed
+    stack.length = 0;
+    stack.push(seed);
+    visited[seed] = 1;
+    let count = 0;
+    let sumX = 0, sumY = 0;
+    let xMin = W, xMax = -1, yMin = H, yMax = -1;
+
+    while (stack.length > 0) {
+      const p = stack.pop();
+      const px = p % W;
+      const py = (p - px) / W;
+      count++;
+      sumX += px; sumY += py;
+      if (px < xMin) xMin = px;
+      if (px > xMax) xMax = px;
+      if (py < yMin) yMin = py;
+      if (py > yMax) yMax = py;
+
+      // Pusha solo vicini ancora da visitare (limita stack)
+      if (px + 1 < W) { const q = p + 1; if (disk[q] && !visited[q]) { visited[q]=1; stack.push(q); } }
+      if (px > 0)     { const q = p - 1; if (disk[q] && !visited[q]) { visited[q]=1; stack.push(q); } }
+      if (py + 1 < H) { const q = p + W; if (disk[q] && !visited[q]) { visited[q]=1; stack.push(q); } }
+      if (py > 0)     { const q = p - W; if (disk[q] && !visited[q]) { visited[q]=1; stack.push(q); } }
+    }
+
+    if (count < MIN_DISK_SIZE) continue;
+
+    const bw = xMax - xMin;
+    const bh = yMax - yMin;
+    if (bh <= 0 || bw <= 0) continue;
+    const aspect = bw / bh;
+    if (aspect < ASPECT_MIN || aspect > ASPECT_MAX) continue;
+
+    const bboxR = Math.max(bw, bh) / 2;
+    const circleArea = Math.PI * bboxR * bboxR;
+    const compactness = count / circleArea;
+    if (compactness < MIN_COMPACTNESS) continue;
+
+    // Candidato valido: cerchio centrale. Tieni il più grande.
+    if (!best || count > best.count) {
+      best = {
+        cx: sumX / count,
+        cy: sumY / count,
+        count: count,
+        radius: bboxR,
+        compactness: compactness,
+      };
+    }
+  }
+
+  return best;
+}
+
+function maybeRegister(frameNow, frameOld, W, H) {
+  const none = { frame: frameNow, dx: 0, dy: 0 };
+  try {
+    const cNow = findRedCentroid(frameNow);
+    const cOld = findRedCentroid(frameOld);
+
+    if (!cNow || !cOld) {
+      // Bersaglio non rilevato in uno dei due frame: skippa la registrazione
+      countdownEl.textContent = 'no-target';
+      return none;
+    }
+
+    // Shift di registrazione: per allineare frameNow a frameOld serve traslare
+    // frameNow di (cOld - cNow). Es: se il centroide è andato a sinistra (cNow.cx < cOld.cx)
+    // significa che l'inquadratura si è spostata a destra → traslo frameNow a destra.
+    let dx = cOld.cx - cNow.cx;
+    let dy = cOld.cy - cNow.cy;
+
+    countdownEl.textContent =
+      `centroid:(${cNow.cx.toFixed(0)},${cNow.cy.toFixed(0)})→(${cOld.cx.toFixed(0)},${cOld.cy.toFixed(0)}) ` +
+      `sh:(${dx.toFixed(1)},${dy.toFixed(1)})`;
+
+    // Se lo shift è veramente trascurabile, evita l'overhead di shiftImageData
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return none;
+
+    return { frame: shiftImageData(frameNow, dx, dy, W, H), dx, dy };
+
+  } catch(e) {
+    countdownEl.textContent = 'reg.err:' + e.message;
+    return none;
+  }
+}
+
+// Applica shift a un ImageData, restituisce nuovo ImageData.
+// Usa canvas completamente separati, nessuna dipendenza da altri canvas.
+let shiftSrcCanvas = null, shiftSrcCtx = null;
+let shiftOutCanvas = null, shiftOutCtx = null;
+function ensureShiftCanvas(W, H) {
+  if (!shiftSrcCanvas || shiftSrcCanvas.width !== W || shiftSrcCanvas.height !== H) {
+    shiftSrcCanvas = document.createElement('canvas'); shiftSrcCanvas.width = W; shiftSrcCanvas.height = H;
+    shiftSrcCtx = shiftSrcCanvas.getContext('2d', { willReadFrequently: true });
+    shiftOutCanvas = document.createElement('canvas'); shiftOutCanvas.width = W; shiftOutCanvas.height = H;
+    shiftOutCtx = shiftOutCanvas.getContext('2d', { willReadFrequently: true });
+  }
+}
+
+function shiftImageData(frame, dx, dy, W, H) {
+  ensureShiftCanvas(W, H);
+  shiftSrcCtx.putImageData(frame, 0, 0);
+  shiftOutCtx.clearRect(0, 0, W, H);
+  shiftOutCtx.drawImage(shiftSrcCanvas, +dx, +dy);
+  // Riempi i bordi lasciati vuoti dalla traslazione, replicando i bordi del frame originale
+  const cdx = Math.ceil(Math.abs(dx)) + 1, cdy = Math.ceil(Math.abs(dy)) + 1;
+  if (dx > 0) shiftOutCtx.drawImage(shiftSrcCanvas, 0, 0, cdx, H, 0, 0, cdx, H);
+  else        shiftOutCtx.drawImage(shiftSrcCanvas, W-cdx, 0, cdx, H, W-cdx, 0, cdx, H);
+  if (dy > 0) shiftOutCtx.drawImage(shiftSrcCanvas, 0, 0, W, cdy, 0, 0, W, cdy);
+  else        shiftOutCtx.drawImage(shiftSrcCanvas, 0, H-cdy, W, cdy, 0, H-cdy, W, cdy);
+  return shiftOutCtx.getImageData(0, 0, W, H);
+}
+
+// PARAMETRI DERIVATI DALLA TOLLERANZA
+//
+// Il cursore (1–10) controlla due soglie per il rilevamento zone nere:
+//
+//  darkThresh  : luminanza massima perché un pixel sia considerato "quasi nero"
+//                nel frame corrente. Scala 1→30, 10→80 (su 255).
+//                Valore basso = solo nero puro; valore alto = anche grigio scuro.
+//
+//  lightThresh : luminanza minima che il pixel doveva avere nel frame precedente
+//                perché il passaggio a nero sia considerato significativo.
+//                Serve a ignorare zone che erano già scure prima del colpo.
+//                Scala 1→60, 10→20.
+//
+//  minArea     : area minima della regione connessa (pixel) per essere accettata.
+//                Scala 1→6, 10→30. Filtra i puntini di rumore del sensore.
+//
+// Tolleranza bassa → soglie strette → solo i fori più netti e compatti.
+// Tolleranza alta  → soglie larghe  → anche fori parzialmente illuminati o piccoli.
+// ──────────────────────────────────────────────────────────────────────────────
+function toleranceParams(t) {
+  // Ricalibrata: l'attuale minimo funzionale (ex t=1) è ora a t=5.
+  // t=1 → darkThresh=8,  lightThresh=85, minArea=60  (molto restrittivo)
+  // t=5 → darkThresh=22, lightThresh=60, minArea=20  (ex minimo)
+  // t=10→ darkThresh=57, lightThresh=25, minArea=5   (permissivo)
+  const darkThresh  = 8  + (t - 1) * 5.4;   // 1→8,   5→22,  10→57
+  const lightThresh = 85 - (t - 1) * 6.7;   // 1→85,  5→60,  10→25
+  const minArea     = Math.round(60 - (t - 1) * 6.1); // 1→60, 5→20, 10→5
+  return { darkThresh, lightThresh, minArea };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MASCHERA ZONE NERE
+// ──────────────────────────────────────────────────────────────────────────────
+// RICONOSCIMENTO FASCIA DEL BERSAGLIO (foglio bianco con cerchi rossi)
+//
+// Per ogni colonna conta la frazione di pixel "del bersaglio", che sono:
+//   - pixel bianchi/chiari (lum > 180, bassa saturazione), OPPURE
+//   - pixel rossi saturi (R molto maggiore di G e B)
+// Lo sfondo dietro il bersaglio (mattoni, legno, ecc.) è scuro o marrone
+// e non rientra in nessuna delle due categorie.
+//
+// Trova la zona continua centrale "del bersaglio", poi sposta i bordi verso
+// il centro per un margine di sicurezza anti-rotazione.
+//
+// Restituisce { x0, x1 } in coordinate del crop oppure null.
+// ──────────────────────────────────────────────────────────────────────────────
+function detectWhiteBand(frame, W, H) {
+  const d = frame.data;
+  const COL_STEP = 4;            // analizza una colonna ogni 4 per velocità
+  const ROW_STEP = 6;
+  const COL_TH   = 0.50;         // colonna "del bersaglio" se ≥50% dei pixel
+  const GAP_TOL  = 4;            // tollera fino a 4 colonne "buco" nella sequenza
+  const MIN_FRAC = 0.20;         // larghezza minima fascia: 20% del crop
+  const SAFETY_MARGIN_FRAC = 0.04; // 4% margine anti-rotazione
+
+  const numCols  = Math.floor(W / COL_STEP);
+  const colTarget = new Uint8Array(numCols);
+  const samplesPerCol = Math.floor(H / ROW_STEP);
+  if (samplesPerCol < 10) return null;
+
+  for (let ci = 0; ci < numCols; ci++) {
+    const x = ci * COL_STEP;
+    let targetCount = 0;
+    for (let y = 0; y < H; y += ROW_STEP) {
+      const i4 = (y * W + x) * 4;
+      const r = d[i4], g = d[i4+1], b = d[i4+2];
+
+      // Pixel bianco anche "sporco": luminanza media-alta, tollera tinte
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+      const isWhitish = (lum > 150 && (maxC - minC) < 80);
+
+      // Pixel rosso anche cupo/sfumato/aranciato: distinzione dal marrone
+      // dei mattoni con differenze (r-g) e (r-b) sufficientemente ampie.
+      const isRed = (r > 90 && (r - g) > 50 && (r - b) > 40);
+
+      if (isWhitish || isRed) targetCount++;
+    }
+    colTarget[ci] = (targetCount / samplesPerCol >= COL_TH) ? 1 : 0;
+  }
+
+  // Trova la sequenza contigua più lunga di colonne "del bersaglio".
+  // Tollera piccoli buchi (fino a GAP_TOL colonne) per robustezza
+  // (anelli rossi spessi, ombre, dettagli scuri dentro il foglio).
+  let bestStart = -1, bestLen = 0;
+  let curStart = -1, curLen = 0, gapCount = 0;
+  for (let ci = 0; ci < numCols; ci++) {
+    if (colTarget[ci]) {
+      if (curLen === 0) curStart = ci;
+      curLen++; gapCount = 0;
+      if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
+    } else {
+      gapCount++;
+      if (gapCount > GAP_TOL) { curLen = 0; gapCount = 0; }
+      else if (curLen > 0) curLen++; // include il piccolo gap nella sequenza
+    }
+  }
+
+  // La fascia deve coprire almeno MIN_FRAC della larghezza
+  const minBandWidth = numCols * MIN_FRAC;
+  if (bestLen < minBandWidth) return null;
+
+  let x0 = bestStart * COL_STEP;
+  let x1 = (bestStart + bestLen - 1) * COL_STEP + COL_STEP - 1;
+
+  // Margine di sicurezza anti-rotazione
+  const safety = Math.round(W * SAFETY_MARGIN_FRAC);
+  x0 = Math.min(x0 + safety, W - 1);
+  x1 = Math.max(x1 - safety, 0);
+  if (x1 - x0 < W * 0.15) return null; // dopo il margine deve restare significativa
+
+  return { x0, x1 };
+}
+
+function computeDarkMask(frameNow, frameOld, params, band, regDx, regDy) {
+  const { darkThresh, lightThresh } = params;
+  const W = frameNow.width, H = frameNow.height;
+  const dNow = frameNow.data;
+  const dOld = frameOld.data;
+  const mask = new Uint8Array(W * H);
+
+  // Margine ai bordi proporzionale allo shift di registrazione applicato
+  const dxAbs = (regDx < 0 ? -regDx : regDx) | 0;
+  const dyAbs = (regDy < 0 ? -regDy : regDy) | 0;
+  const maxShift = dxAbs > dyAbs ? dxAbs : dyAbs;
+  const edgeMargin = maxShift + 4;
+
+  const x0 = band ? (edgeMargin > band.x0 ? edgeMargin : band.x0) : edgeMargin;
+  const x1 = band ? (W - 1 - edgeMargin < band.x1 ? W - 1 - edgeMargin : band.x1) : W - 1 - edgeMargin;
+  const y0 = edgeMargin;
+  const y1 = H - 1 - edgeMargin;
+
+  const oldDarkTh = darkThresh + 20;
+
+  // Raggio dilatazione adattivo: tanto più la registrazione ha applicato shift
+  // significativo, tanto più ampio deve essere il vicinato per coprire i bordi
+  // dei fori preesistenti spostati. 3x3 → shift ≤2, 5x5 → shift 3-8, 7x7 → shift >8
+  const dilR = maxShift <= 2 ? 1 : (maxShift <= 8 ? 2 : 3);
+
+  // Pre-calcolo luminanza di frameOld (1 byte per pixel) per accesso veloce
+  const lumOld = new Uint8Array(W * H);
+  for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+    lumOld[p] = (0.299 * dOld[i] + 0.587 * dOld[i+1] + 0.114 * dOld[i+2]) | 0;
+  }
+
+  // Loop principale
+  for (let y = y0; y <= y1; y++) {
+    const rowStart = y * W;
+    for (let x = x0; x <= x1; x++) {
+      const p = rowStart + x;
+      const i = p * 4;
+      const lumNow = (0.299 * dNow[i] + 0.587 * dNow[i+1] + 0.114 * dNow[i+2]) | 0;
+      if (lumNow >= darkThresh) continue;
+
+      // Controllo vicinato (2*dilR+1) x (2*dilR+1) di frameOld
+      let oldHasDark = false;
+      for (let dy = -dilR; dy <= dilR && !oldHasDark; dy++) {
+        const baseRow = (y + dy) * W;
+        for (let dx = -dilR; dx <= dilR; dx++) {
+          if (lumOld[baseRow + x + dx] < oldDarkTh) { oldHasDark = true; break; }
+        }
+      }
+      if (oldHasDark) continue;
+
+      // Vecchio chiaro abbastanza per essere "scurito"
+      if (lumOld[p] <= lightThresh) continue;
+
+      mask[p] = 1;
+    }
+  }
+  return mask;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FILTRO: erosione adattiva + area minima
+//
+// Erosione adattiva: tolleranza bassa → erosione leggera (3×3, 2 vicini su 4)
+//                   tolleranza alta  → nessuna erosione (passa tutto)
+// Questo permette di rilevare anche fori piccoli (pochi pixel) a tolleranza alta.
+// ──────────────────────────────────────────────────────────────────────────────
+function filterMask(mask, W, H, params) {
+  const { minArea, darkThresh } = params;
+  // Soglia erosione: quanti vicini cardinali devono essere attivi (0=nessuna erosione)
+  // A tolleranza 1 (darkThresh=22) → 3 vicini; a tolleranza 10 (darkThresh=85) → 0
+  // erodeMin scala con darkThresh: a t=5 (darkThresh≈22) → 3 vicini come prima
+  const erodeMin = Math.max(0, Math.round(3 - (darkThresh - 22) / 12));
+
+  const eroded = new Uint8Array(mask.length);
+  if (erodeMin === 0) {
+    eroded.set(mask);
+  } else {
+    for (let y = 1; y < H-1; y++) {
+      for (let x = 1; x < W-1; x++) {
+        const idx = y*W+x;
+        if (!mask[idx]) continue;
+        const n = (mask[idx-1]?1:0) + (mask[idx+1]?1:0)
+                + (mask[idx-W]?1:0) + (mask[idx+W]?1:0);
+        if (n >= erodeMin) eroded[idx] = 1;
+      }
+    }
+  }
+
+  // Flood fill: scarta regioni sotto minArea, raccoglie baricentri
+  const visited   = new Uint8Array(mask.length);
+  const out       = new Uint8Array(mask.length);
+  const centroids = [];
+  const stack     = [];
+
+  for (let start = 0; start < eroded.length; start++) {
+    if (!eroded[start] || visited[start]) continue;
+    stack.length = 0;
+    stack.push(start);
+    visited[start] = 1;
+    const region = [];
+
+    while (stack.length > 0) {
+      const idx = stack.pop();
+      region.push(idx);
+      const y = Math.floor(idx / W), x = idx % W;
+      if (y > 0   && eroded[idx-W] && !visited[idx-W]) { visited[idx-W]=1; stack.push(idx-W); }
+      if (y < H-1 && eroded[idx+W] && !visited[idx+W]) { visited[idx+W]=1; stack.push(idx+W); }
+      if (x > 0   && eroded[idx-1] && !visited[idx-1]) { visited[idx-1]=1; stack.push(idx-1); }
+      if (x < W-1 && eroded[idx+1] && !visited[idx+1]) { visited[idx+1]=1; stack.push(idx+1); }
+    }
+
+    if (region.length >= minArea) {
+      let sumX = 0, sumY = 0;
+      for (const idx of region) {
+        out[idx] = 1;
+        sumX += idx % W;
+        sumY += Math.floor(idx / W);
+      }
+      centroids.push({ cx: sumX / region.length, cy: sumY / region.length });
+    }
+  }
+
+  return { mask: out, centroids };
+}
+
+// overlayMask(mask, centroids, maskW, maskH, regDx, regDy)
+// Sovrappone la maschera verde e, in OR, i cerchi sui baricentri.
+// regDx,regDy: shift di registrazione → la maschera viene traslata di -regDx,-regDy
+// per tornare nelle coordinate del frame grezzo visualizzato.
+function overlayMask(mask, centroids, maskW, maskH, regDx = 0, regDy = 0) {
+  const imgData = ctx.getImageData(0, 0, renderW, renderH);
+  const d = imgData.data;
+
+  const scaleX = renderW / maskW;
+  const scaleY = renderH / maskH;
+  const offX = Math.round(-regDx * scaleX);
+  const offY = Math.round(-regDy * scaleY);
+
+  // Disegna la maschera verde pixel per pixel
+  for (let sy = 0; sy < maskH; sy++) {
+    for (let sx = 0; sx < maskW; sx++) {
+      if (!mask[sy * maskW + sx]) continue;
+      const dx0 = Math.round(sx * scaleX) + offX;
+      const dy0 = Math.round(sy * scaleY) + offY;
+      const dx1 = Math.round((sx + 1) * scaleX) + offX;
+      const dy1 = Math.round((sy + 1) * scaleY) + offY;
+      for (let py = dy0; py < dy1 && py < renderH; py++) {
+        if (py < 0) continue;
+        for (let px = dx0; px < dx1 && px < renderW; px++) {
+          if (px < 0) continue;
+          const i = (py * renderW + px) * 4;
+          d[i]=15; d[i+1]=255; d[i+2]=15; d[i+3]=220;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Disegna i cerchi sui baricentri (in OR sopra la maschera già disegnata)
+  const circleVal = parseInt(circleSlider.value);
+  if (centroids.length > 0 && circleVal > 0) {
+    // Raggio in pixel display: scala da 4px (val=1) a 80px (val=10)
+    const radius = Math.round(4 + (circleVal - 1) * 8.4);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 255, 60, 0.92)';
+    ctx.lineWidth   = Math.max(1, Math.round(radius * 0.12));
+    for (const { cx, cy } of centroids) {
+      // Converti da coordinate maschera a coordinate display, applica offset
+      const dispX = cx * scaleX + offX;
+      const dispY = cy * scaleY + offY;
+      ctx.beginPath();
+      ctx.arc(dispX, dispY, radius, 0, 2 * Math.PI);
+      ctx.stroke();
+      // Piccola croce al centro
+      const arm = Math.max(3, Math.round(radius * 0.2));
+      ctx.beginPath();
+      ctx.moveTo(dispX - arm, dispY); ctx.lineTo(dispX + arm, dispY);
+      ctx.moveTo(dispX, dispY - arm); ctx.lineTo(dispX, dispY + arm);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Disegna due linee verticali azzurre sui bordi della fascia bianca rilevata
+// ──────────────────────────────────────────────────────────────────────────────
+function drawBandLines(band, cropW) {
+  const scaleX = renderW / cropW;
+  const xL = Math.round(band.x0 * scaleX);
+  const xR = Math.round(band.x1 * scaleX);
+  ctx.save();
+  // Tratteggio leggero rosso (stesso colore del centro bersaglio)
+  ctx.strokeStyle = 'rgba(200, 30, 30, 0.55)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(xL + 0.5, 0); ctx.lineTo(xL + 0.5, renderH);
+  ctx.moveTo(xR - 0.5, 0); ctx.lineTo(xR - 0.5, renderH);
+  ctx.stroke();
+  ctx.restore();
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ERRORE
+// ──────────────────────────────────────────────────────────────────────────────
+function showError(msg) {
+  errorText.innerHTML = msg;
+  errorOverlay.classList.add('visible');
+  statusCam.textContent = 'ERRORE CAM';
+  statusCam.style.color = '#ff4444';
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FULLSCREEN
+// ──────────────────────────────────────────────────────────────────────────────
+const fsBtn       = document.getElementById('fs-btn');
+const fsIconEnter = document.getElementById('fs-icon-enter');
+const fsIconExit  = document.getElementById('fs-icon-exit');
+
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function updateFsIcon() {
+  if (isFullscreen()) {
+    fsIconEnter.style.display = 'none';
+    fsIconExit.style.display  = '';
+  } else {
+    fsIconEnter.style.display = '';
+    fsIconExit.style.display  = 'none';
+  }
+  // Ricalcola layout: uscire/entrare in fullscreen cambia le dimensioni
+  setTimeout(updateLayout, 150);
+}
+
+async function requestFullscreen() {
+  const el = document.documentElement;
+  try {
+    if (el.requestFullscreen)             await el.requestFullscreen({ navigationUI: 'hide' });
+    else if (el.webkitRequestFullscreen)  await el.webkitRequestFullscreen();
+  } catch(e) { /* ignora se bloccato */ }
+}
+
+async function exitFullscreen() {
+  try {
+    if (document.exitFullscreen)            await document.exitFullscreen();
+    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+  } catch(e) {}
+}
+
+fsBtn.addEventListener('click', async () => {
+  if (isFullscreen()) await exitFullscreen();
+  else                await requestFullscreen();
+});
+
+document.addEventListener('fullscreenchange',       updateFsIcon);
+document.addEventListener('webkitfullscreenchange', updateFsIcon);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SNAPSHOT — salvataggio di uno scatto JPG con nome TSN_<data>_<ora>.jpg
+// ──────────────────────────────────────────────────────────────────────────────
+const snapBtn = document.getElementById('snap-btn');
+
+function formatTimestamp(d) {
+  const pad = (n, l=2) => String(n).padStart(l, '0');
+  const Y = d.getFullYear();
+  const M = pad(d.getMonth() + 1);
+  const D = pad(d.getDate());
+  const h = pad(d.getHours());
+  const m = pad(d.getMinutes());
+  const s = pad(d.getSeconds());
+  return `${Y}${M}${D}_${h}${m}${s}`;
+}
+
+async function takeSnapshot() {
+  if (!liveCanvas) return;
+
+  // Crea un canvas dedicato per lo snapshot (così non interferisce con il live)
+  const snapCanvas = document.createElement('canvas');
+  snapCanvas.width  = liveCanvas.width;
+  snapCanvas.height = liveCanvas.height;
+  const snapCtx = snapCanvas.getContext('2d');
+  snapCtx.drawImage(liveCanvas, 0, 0);
+
+  const filename = `TSN_${formatTimestamp(new Date())}.jpg`;
+
+  // Effetto flash visivo
+  snapBtn.classList.add('flash');
+  setTimeout(() => snapBtn.classList.remove('flash'), 150);
+
+  // Converti in JPG blob
+  const blob = await new Promise(resolve =>
+    snapCanvas.toBlob(resolve, 'image/jpeg', 0.92)
+  );
+  if (!blob) {
+    countdownEl.textContent = 'snap fallita';
+    return;
+  }
+
+  // ── Salvataggio: due percorsi ─────────────────────────────────────────
+  // 1) App nativa (Capacitor): scrive direttamente in galleria via plugin
+  //    Filesystem, senza alcuna notifica di sistema. Totalmente silenzioso.
+  // 2) Browser: download tradizionale (compare la notifica "file scaricato"
+  //    di Chrome Android, inevitabile dal lato web).
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    try {
+      const { Filesystem, Directory } = window.Capacitor.Plugins;
+      // Converti blob in base64 (richiesto dal plugin Filesystem)
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      // Scriviamo in "Pictures/TargetVision/" che è una sottocartella indicizzata
+      // automaticamente da Google Foto come album.
+      await Filesystem.writeFile({
+        path: `Pictures/TargetVision/${filename}`,
+        data: base64,
+        directory: Directory.ExternalStorage,
+        recursive: true
+      });
+      // Nessun feedback testuale: il flash del bottone è l'unica conferma
+      return;
+    } catch(e) {
+      countdownEl.textContent = 'err: ' + e.message;
+      setTimeout(() => { if (countdownEl.textContent.startsWith('err:')) countdownEl.textContent = ''; }, 3000);
+      return;
+    }
+  }
+
+  // Download diretto SENZA conferme né dialog di sistema.
+  // Su Chrome Android il file finisce in /Download/ (Google Foto lo indicizza
+  // automaticamente e compare in galleria entro pochi secondi).
+  // Nessuna conferma utente: il flash del bottone è l'unico feedback.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+snapBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  takeSnapshot();
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// INIT
+// ──────────────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', updateLayout);
+screen.orientation?.addEventListener('change', () => setTimeout(updateLayout, 150));
+updateLayout();
+
+// Il fullscreen richiede un gesto utente su Chrome Android.
+// Lo tentiamo al primo tocco/click ovunque sulla pagina, poi rimuoviamo il listener.
+function tryAutoFullscreen() {
+  if (!isFullscreen()) requestFullscreen();
+  document.removeEventListener('touchstart', tryAutoFullscreen);
+  document.removeEventListener('click',      tryAutoFullscreen);
+}
+document.addEventListener('touchstart', tryAutoFullscreen, { once: true });
+document.addEventListener('click',      tryAutoFullscreen, { once: true });
+
+initCamera();
+</script>
+</body>
+</html>
