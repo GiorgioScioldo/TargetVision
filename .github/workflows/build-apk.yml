@@ -39,6 +39,59 @@ jobs:
       - name: Sincronizza Capacitor
         run: npx cap sync android
 
+      - name: Patch MainActivity per i permessi WebRTC
+        run: |
+          MAIN=android/app/src/main/java/org/targetvision/app/MainActivity.java
+          mkdir -p "$(dirname $MAIN)"
+          cat > $MAIN << 'EOF'
+          package org.targetvision.app;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.PermissionRequest;
+          import android.webkit.WebChromeClient;
+          import androidx.core.app.ActivityCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  // Richiedi permessi nativi all'avvio
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      String[] perms = {
+                          Manifest.permission.CAMERA,
+                          Manifest.permission.RECORD_AUDIO,
+                          Manifest.permission.WRITE_EXTERNAL_STORAGE
+                      };
+                      ActivityCompat.requestPermissions(this, perms, 1);
+                  }
+
+                  // Ponte WebView → permessi: quando il JS chiede getUserMedia,
+                  // la WebView inoltra subito il permesso (sotto, Android lo
+                  // dirotta al permesso nativo già concesso)
+                  this.bridge.getWebView().setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public void onPermissionRequest(PermissionRequest request) {
+                          request.grant(request.getResources());
+                      }
+                  });
+              }
+          }
+          EOF
+
+      - name: Patch AndroidManifest.xml per i permessi
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          # Aggiungi i permessi se mancano
+          if ! grep -q "android.permission.CAMERA" $MANIFEST; then
+            sed -i 's|</manifest>|    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-feature android:name="android.hardware.camera" android:required="true" />\n</manifest>|' $MANIFEST
+          fi
+          cat $MANIFEST
+
       - name: Build APK debug
         working-directory: ./android
         run: |
